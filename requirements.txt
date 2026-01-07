@@ -1,0 +1,13 @@
+# TouchDesigner ComfyUI API Pipeline Requirements
+# Install with: pip install -r requirements.txt
+
+# API Server
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart>=0.0.6
+
+# Worker (uses standard library mostly)
+# No additional requirements - uses urllib, json, etc.
+
+# Optional: for development/testing
+# requests>=2.31.0  # Alternative HTTP client for testing

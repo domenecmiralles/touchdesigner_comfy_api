@@ -171,8 +171,8 @@
   "237": {
     "inputs": {
       "upscale_method": "nearest-exact",
-      "width": 512,
-      "height": 320,
+      "width": 1280,
+      "height": 720,
       "crop": "disabled",
       "image": [
         "8",

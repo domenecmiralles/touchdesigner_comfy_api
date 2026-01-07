@@ -2,6 +2,13 @@
 
 An asynchronous pipeline for sending frames from TouchDesigner to ComfyUI for AI processing (image-to-video generation) and receiving results back.
 
+TURN ON:
+(turn on comfy at port 8111 or change port in config)
+python worker.py 
+python api_server.py 
+./cloudflared tunnel --url http://localhost:8080
+(get tunnel url and change it from the comfy threaded script, paste that in execute td and profit - needs a source_top and output media nodes)
+
 ## Architecture
 
 ```

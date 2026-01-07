@@ -103,16 +103,33 @@ class ComfyUIClient:
             
             time.sleep(poll_interval)
     
-    def get_output_videos(
+    def get_output_files(
         self, 
         history_entry: Dict[str, Any],
         comfyui_output_dir: Path = COMFYUI_OUTPUT_DIR
     ) -> List[Tuple[str, Path]]:
-        """Get output videos from a completed workflow."""
+        """Get output files (images or videos) from a completed workflow."""
         outputs = history_entry.get('outputs', {})
         results = []
         
         for node_id, node_output in outputs.items():
+            # Check for image outputs (SaveImage node)
+            if 'images' in node_output:
+                for image_data in node_output['images']:
+                    filename = image_data['filename']
+                    subfolder = image_data.get('subfolder', '')
+                    
+                    if subfolder:
+                        file_path = comfyui_output_dir / subfolder / filename
+                    else:
+                        file_path = comfyui_output_dir / filename
+                    
+                    if file_path.exists():
+                        results.append((node_id, file_path))
+                        logger.info(f"Found image output: {file_path}")
+                    else:
+                        logger.warning(f"Image not found: {file_path}")
+            
             # Check for video outputs (SaveVideo node)
             if 'videos' in node_output:
                 for video_data in node_output['videos']:
@@ -120,15 +137,15 @@ class ComfyUIClient:
                     subfolder = video_data.get('subfolder', '')
                     
                     if subfolder:
-                        video_path = comfyui_output_dir / subfolder / filename
+                        file_path = comfyui_output_dir / subfolder / filename
                     else:
-                        video_path = comfyui_output_dir / filename
+                        file_path = comfyui_output_dir / filename
                     
-                    if video_path.exists():
-                        results.append((node_id, video_path))
-                        logger.info(f"Found video output: {video_path}")
+                    if file_path.exists():
+                        results.append((node_id, file_path))
+                        logger.info(f"Found video output: {file_path}")
                     else:
-                        logger.warning(f"Video not found: {video_path}")
+                        logger.warning(f"Video not found: {file_path}")
             
             # VHS_VideoCombine outputs gifs
             if 'gifs' in node_output:
@@ -137,13 +154,13 @@ class ComfyUIClient:
                     subfolder = video_data.get('subfolder', '')
                     
                     if subfolder:
-                        video_path = comfyui_output_dir / subfolder / filename
+                        file_path = comfyui_output_dir / subfolder / filename
                     else:
-                        video_path = comfyui_output_dir / filename
+                        file_path = comfyui_output_dir / filename
                     
-                    if video_path.exists():
-                        results.append((node_id, video_path))
-                        logger.info(f"Found video output: {video_path}")
+                    if file_path.exists():
+                        results.append((node_id, file_path))
+                        logger.info(f"Found video/gif output: {file_path}")
         
         return results
 
@@ -236,7 +253,7 @@ def process_job(
         workflow_path: Path to workflow JSON
         
     Returns:
-        Path to result video file
+        Path to result file (image or video)
     """
     job_id = job['job_id']
     input_image_path = job['input_image_path']
@@ -254,21 +271,27 @@ def process_job(
     # Inject input image path (VHS_LoadImagePath node)
     inject_value(workflow, WORKFLOW_NODES['image_input'], 'image', input_image_path)
     
-    # Inject positive prompt
-    inject_value(workflow, WORKFLOW_NODES['positive_prompt'], 'text', prompt)
+    # Inject positive prompt (only if we have a prompt to inject)
+    if prompt:
+        inject_value(workflow, WORKFLOW_NODES['positive_prompt'], 'text', prompt)
     
-    # Inject negative prompt if provided
-    if negative_prompt is not None:
-        inject_value(workflow, WORKFLOW_NODES['negative_prompt'], 'text', negative_prompt)
+    # Inject negative prompt if provided and node exists
+    neg_node = WORKFLOW_NODES.get('negative_prompt')
+    if negative_prompt is not None and neg_node is not None:
+        inject_value(workflow, neg_node, 'text', negative_prompt)
     
     # Inject seed if provided, otherwise use random
     if seed is None:
         seed = random.randint(1, 2**63)
-    inject_value(workflow, WORKFLOW_NODES['seed'], 'noise_seed', seed)
+    # KSampler uses 'seed', SamplerCustom uses 'noise_seed'
+    inject_value(workflow, WORKFLOW_NODES['seed'], 'seed', seed)
     
     # Set output filename prefix to include job_id
     output_prefix = f"td_output/{job_id}"
-    inject_value(workflow, WORKFLOW_NODES['video_output'], 'filename_prefix', output_prefix)
+    # Check for image_output or video_output
+    output_node = WORKFLOW_NODES.get('image_output') or WORKFLOW_NODES.get('video_output')
+    if output_node:
+        inject_value(workflow, output_node, 'filename_prefix', output_prefix)
     
     # Queue the workflow
     prompt_id = comfy_client.queue_prompt(workflow)
@@ -277,17 +300,17 @@ def process_job(
     # Wait for completion
     history = comfy_client.wait_for_completion(prompt_id)
     
-    # Get output videos
-    outputs = comfy_client.get_output_videos(history)
+    # Get output files (images or videos)
+    outputs = comfy_client.get_output_files(history)
     
     if not outputs:
-        raise RuntimeError("Workflow completed but no video output found")
+        raise RuntimeError("Workflow completed but no output file found")
     
-    # Return the first video output
-    node_id, video_path = outputs[0]
-    logger.info(f"Job {job_id} produced video: {video_path}")
+    # Return the first output
+    node_id, output_path = outputs[0]
+    logger.info(f"Job {job_id} produced output: {output_path}")
     
-    return video_path
+    return output_path
 
 
 def run_worker():
